@@ -20,6 +20,9 @@ npm run lint           # eslint
 npm test               # Vitest run (unit + integration)
 npm run test:watch     # Vitest watch mode
 npm run test:coverage  # Vitest + coverage (text + coverage/index.html)
+npm run test:e2e       # Playwright e2e (starts dev server automatically)
+npx playwright test --ui       # Playwright interactive UI mode
+npx playwright show-report     # open last HTML report
 ```
 
 Run a single test file or test:
@@ -28,6 +31,15 @@ Run a single test file or test:
 npx vitest run src/utils/rng.test.ts          # one file
 npx vitest run -t "reveals immediately"       # tests matching a name
 ```
+
+In the Claude Code web sandbox, Playwright browsers are pre-installed at `/opt/pw-browsers`.
+Run e2e tests there with:
+
+```bash
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e
+```
+
+On a local machine, run `npx playwright install chromium` once after `npm install`.
 
 ## Architecture
 
@@ -87,3 +99,10 @@ presentational components, and App's state machine (with `matchMedia` and timers
   unit tests. Coverage is enforced at an 80% threshold over everything else (currently 100%).
 - When testing App, **mock the hook** (`vi.mock('./hooks/useWisteriaTunnel')`) rather than
   trying to run the canvas.
+
+**Playwright e2e** (`e2e/app.spec.ts`) covers the full browser flow against real Chromium:
+initial render state, the click → zoom → reveal animation path (real timers, ~6s), reveal
+card content (names, date, RSVP link), canvas element presence, and the `prefers-reduced-motion`
+shortcut path (via `page.emulateMedia`). Config is in `playwright.config.ts`. The `webServer`
+option starts `npm run dev` automatically — no manual server step needed. This is also where
+`useWisteriaTunnel` gets exercised, since jsdom has no canvas 2D context.
