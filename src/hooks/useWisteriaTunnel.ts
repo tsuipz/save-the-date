@@ -472,14 +472,31 @@ export function useWisteriaTunnel() {
       ctx.globalAlpha = 1; // reset for the next strand
     }
 
-    // Cap to ~30fps on low-core devices; 0 = uncapped (every rAF frame).
-    const frameInterval =
+    // Frame-rate policy. `frameInterval()` returns the minimum ms between
+    // drawn frames (0 = uncapped, draw every rAF):
+    //  - low-core devices are always capped to ~30fps;
+    //  - once the fly-through has finished (camZ >= 1) — or immediately, for
+    //    reduced-motion users who never zoom — the scene is just gentle ambient
+    //    sway behind a blur(38px) card, so we also drop to ~30fps to save
+    //    battery during the (indefinite) time the reveal card sits on screen;
+    //  - during the active zoom we stay uncapped for a smooth fly-through.
+    const IDLE_INTERVAL = 1000 / 30;
+    const lowCoreInterval =
       typeof navigator !== 'undefined' &&
       typeof navigator.hardwareConcurrency === 'number' &&
       navigator.hardwareConcurrency <= 4
-        ? 1000 / 30
+        ? IDLE_INTERVAL
         : 0;
+    const reducedMotion =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let lastFrame = 0;
+
+    function frameInterval(): number {
+      const idle = reducedMotion || (zoomActiveRef.current && camZ >= 1);
+      return Math.max(lowCoreInterval, idle ? IDLE_INTERVAL : 0);
+    }
 
     // Composite one frame: cached base → moving strands → scaled canopy →
     // side vignettes (drawn last, on top, to darken the left/right edges and
@@ -516,13 +533,14 @@ export function useWisteriaTunnel() {
       });
     }
 
-    // The animation loop. Always re-schedules itself; on a capped device it
-    // bails early (without drawing) until `frameInterval` has elapsed, which
-    // halves the work behind the heavily-blurred reveal card.
+    // The animation loop. Always re-schedules itself; it bails early (without
+    // drawing) until the current frameInterval() has elapsed.
     let rafId = 0;
+    let paused = false;
     function loop(ts: number) {
       rafId = requestAnimationFrame(loop);
-      if (frameInterval && ts - lastFrame < frameInterval) return;
+      const interval = frameInterval();
+      if (interval && ts - lastFrame < interval) return;
       lastFrame = ts;
 
       tick++; // drives the sway sine wave
@@ -543,16 +561,33 @@ export function useWisteriaTunnel() {
       buildScene();
     }
 
+    // Pause the loop entirely while the tab is backgrounded — there's no point
+    // drawing frames nobody can see, and it stops the animation draining the
+    // battery on a phone left on the page. Resume (and reset the frame clock)
+    // when the tab becomes visible again.
+    function onVisibility() {
+      if (document.hidden) {
+        paused = true;
+        cancelAnimationFrame(rafId);
+      } else if (paused) {
+        paused = false;
+        lastFrame = 0;
+        rafId = requestAnimationFrame(loop);
+      }
+    }
+
     resize();
     window.addEventListener('resize', resize);
+    document.addEventListener('visibilitychange', onVisibility);
     rafId = requestAnimationFrame(loop);
 
-    // Cleanup: stop the loop and drop the listener so nothing keeps running
+    // Cleanup: stop the loop and drop the listeners so nothing keeps running
     // after unmount (and so React 18/19 StrictMode's double-mount in dev
     // doesn't leave a second loop alive).
     return () => {
       cancelAnimationFrame(rafId);
       window.removeEventListener('resize', resize);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, []);
 
