@@ -1,0 +1,25 @@
+name: CI
+
+# Gate every push and PR on lint + tests + a production build, so main can't
+# go red. (Deployment is handled separately by deploy.yml on push to main.)
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build

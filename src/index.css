@@ -1,0 +1,167 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------ *
+ * Save the Date — styles ported verbatim from the vanilla prototype.
+ * Tailwind handles responsive layout scaffolding only; the bespoke
+ * wisteria look (frosted panels, exact rgba/hsl, clamp() type scales,
+ * keyframes) lives here to guarantee pixel fidelity with index.html.
+ * Class names are kept identical to the prototype. The `.hide` / `.show`
+ * toggles are now driven by React props instead of classList calls.
+ * ------------------------------------------------------------------ */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { width: 100%; height: 100vh; overflow: hidden; background: #12082a; }
+#c { position: fixed; inset: 0; width: 100%; height: 100%; }
+
+#petals { position: fixed; inset: 0; pointer-events: none; z-index: 6; overflow: hidden; }
+.pt { position: absolute; top: -14px; opacity: 0; animation: ptFall linear infinite; }
+@keyframes ptFall {
+  0%   { opacity: 0; transform: translateY(0) rotate(0deg) translateX(0px); }
+  7%   { opacity: .75; }
+  88%  { opacity: .4; }
+  100% { opacity: 0; transform: translateY(108vh) rotate(520deg) translateX(35px); }
+}
+
+#enterScreen {
+  position: fixed; inset: 0; z-index: 10;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  transition: opacity 1.4s ease, transform 1.6s ease;
+}
+#enterScreen .inner {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 36px 52px 40px;
+  background: rgba(8, 3, 20, 0.62);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border-radius: 8px;
+  border: 1px solid rgba(200, 160, 255, .18);
+}
+#enterScreen.hide { opacity: 0; transform: scale(1.1) translateY(-20px); pointer-events: none; }
+.eover {
+  font-family: 'Cinzel', serif; font-weight: 300;
+  font-size: clamp(10px, 1.2vw, 13px); letter-spacing: .52em;
+  color: rgba(232, 215, 255, .75); text-transform: uppercase;
+  margin-bottom: 32px; opacity: 0; animation: fadeUp 2.5s ease .2s forwards;
+  text-shadow: none;
+}
+@keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+#ebtn {
+  background: none; border: none; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 20px;
+  padding: 0; opacity: 0; animation: fadeUp 2.5s ease .7s forwards;
+}
+.ring {
+  width: 144px; height: 144px; border-radius: 50%;
+  border: 1px solid rgba(215, 175, 255, .24);
+  display: flex; align-items: center; justify-content: center;
+  position: relative; transition: border-color .5s, box-shadow .5s;
+}
+.ring::before { content: ''; position: absolute; inset: 8px; border-radius: 50%; border: 1px solid rgba(215, 175, 255, .11); }
+.ring::after  { content: ''; position: absolute; inset: -10px; border-radius: 50%; border: 1px solid rgba(215, 175, 255, .06); animation: rp 3.5s ease-in-out infinite; }
+@keyframes rp { 0%, 100% { transform: scale(1); opacity: .3; } 50% { transform: scale(1.05); opacity: .88; } }
+#ebtn:hover .ring { border-color: rgba(215, 175, 255, .68); box-shadow: 0 0 55px rgba(170, 95, 235, .3), inset 0 0 32px rgba(170, 95, 235, .08); }
+.flower { font-size: 46px; filter: drop-shadow(0 0 10px rgba(220, 185, 255, .5)); animation: fb 4.5s ease-in-out infinite; display: block; }
+@keyframes fb { 0%, 100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-6px) rotate(2deg); } }
+.elbl { font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 300; font-size: clamp(18px, 2.2vw, 26px); color: rgba(242, 230, 255, .88); letter-spacing: .16em; transition: color .4s; text-shadow: none; }
+#ebtn:hover .elbl { color: rgba(255, 248, 255, 1); }
+
+#revealScreen {
+  position: fixed; inset: 0; z-index: 9;
+  display: flex; align-items: safe center; justify-content: center;
+  /* On short/landscape screens the card can be taller than the viewport.
+     `safe center` keeps it centred when it fits but falls back to top-aligned
+     (instead of clipping the top) when it doesn't, and overflow-y lets it
+     scroll. Padding keeps it off the edges while scrolling. */
+  overflow-y: auto;
+  padding: 16px;
+  opacity: 0; pointer-events: none;
+}
+#revealScreen.show { opacity: 1; pointer-events: auto; transition: opacity 2s ease; }
+.card {
+  position: relative; text-align: center;
+  display: flex; flex-direction: column; align-items: center;
+  padding: clamp(40px, 5.5vw, 66px) clamp(48px, 7vw, 90px) clamp(38px, 5vw, 60px);
+  border-radius: 8px;
+}
+.cbg { position: absolute; inset: 0; border-radius: 8px; border: 1px solid rgba(215, 178, 252, .16); background: rgba(10, 5, 24, .56); backdrop-filter: blur(38px); -webkit-backdrop-filter: blur(38px); }
+.cdeco { position: absolute; left: 50%; transform: translateX(-50%); font-size: 18px; letter-spacing: 10px; color: rgba(205, 165, 248, .22); z-index: 1; }
+.cdeco.t { top: -11px; } .cdeco.b { bottom: -11px; }
+.r { position: relative; z-index: 1; opacity: 0; transform: translateY(12px); transition: opacity .9s ease, transform .9s ease; }
+#revealScreen.show .r      { opacity: 1; transform: translateY(0); }
+#revealScreen.show .r.d1   { transition-delay: .3s; }
+#revealScreen.show .r.d2   { transition-delay: .72s; }
+#revealScreen.show .r.d3   { transition-delay: 1.18s; }
+#revealScreen.show .r.d4   { transition-delay: 1.48s; }
+#revealScreen.show .r.d5   { transition-delay: 1.9s; }
+#revealScreen.show .r.d6   { transition-delay: 2.3s; }
+#revealScreen.show .r.d7   { transition-delay: 2.7s; }
+.lbl  { font-family: 'Cinzel', serif; font-weight: 300; font-size: clamp(8px, 1vw, 11px); letter-spacing: .55em; color: rgba(230, 210, 255, .82); text-transform: uppercase; }
+.names { line-height: 1.06; margin-bottom: 6px; }
+.name  { display: block; font-family: 'Cormorant Garamond', serif; font-weight: 300; font-style: italic; font-size: clamp(30px, 5vw, 54px); color: rgba(252, 238, 255, .97); letter-spacing: .03em; text-shadow: 0 0 50px rgba(195, 140, 252, .35); white-space: nowrap; }
+.amp   { display: block; font-family: 'EB Garamond', serif; font-style: italic; font-size: clamp(17px, 2.5vw, 28px); color: rgba(218, 185, 252, .55); margin: 5px 0; letter-spacing: .08em; }
+.divl  { width: 54px; height: 1px; background: linear-gradient(90deg, transparent, rgba(205, 165, 248, .42), transparent); margin: 22px auto; position: relative; }
+.divl::after { content: '✦'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 9px; color: rgba(205, 165, 248, .58); background: rgba(10, 5, 24, .88); padding: 0 7px; }
+.date { font-family: 'Cormorant Garamond', serif; font-weight: 300; font-size: clamp(20px, 3vw, 38px); color: rgba(240, 220, 255, .94); letter-spacing: .16em; text-shadow: 0 0 38px rgba(180, 120, 245, .48); margin-bottom: 8px; }
+.sub  { font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: clamp(12px, 1.4vw, 15px); color: rgba(218, 198, 248, .72); letter-spacing: .1em; }
+
+/* RSVP — ghost button (an <a> to the Google Form) in the frosted aesthetic. */
+.cal-btn {
+  display: inline-block;
+  margin-top: 26px;
+  background: rgba(215, 178, 252, .05);
+  border: 1px solid rgba(215, 178, 252, .28);
+  border-radius: 6px;
+  padding: 9px 20px;
+  cursor: pointer;
+  text-decoration: none;
+  font-family: 'Cinzel', serif; font-weight: 300;
+  font-size: clamp(8px, .95vw, 11px); letter-spacing: .34em; text-transform: uppercase;
+  color: rgba(230, 210, 255, .78);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  transition: color .4s, border-color .4s, box-shadow .4s, background .4s;
+}
+.cal-btn:hover {
+  color: rgba(255, 248, 255, 1);
+  border-color: rgba(215, 175, 255, .6);
+  background: rgba(215, 178, 252, .1);
+  box-shadow: 0 0 28px rgba(170, 95, 235, .22);
+}
+
+/* Mobile polish (< 768px): the prototype was desktop-first, so shrink the
+   enter panel + ring and tighten the card so nothing overflows on phones.
+   (The canvas-side mobile tuning lives in useWisteriaTunnel's buildScene.) */
+@media (max-width: 767px) {
+  #enterScreen .inner { padding: 28px 30px 32px; max-width: 86vw; }
+  .eover { margin-bottom: 24px; }
+  .ring { width: 112px; height: 112px; }
+  .ring::before { inset: 6px; }
+  .flower { font-size: 38px; }
+  .card { padding: clamp(34px, 7vw, 48px) clamp(28px, 6vw, 44px) clamp(30px, 6vw, 42px); }
+  .cdeco { font-size: 15px; letter-spacing: 7px; }
+}
+
+/* Short / landscape viewports (e.g. a phone on its side): scale the card down
+   with vh-based type and padding so it fits the limited height without needing
+   to scroll, and tighten the enter panel to match. */
+@media (max-height: 560px) {
+  #enterScreen .inner { padding: 20px 28px 24px; }
+  .eover { margin-bottom: 16px; }
+  #ebtn { gap: 12px; }
+  .ring { width: 92px; height: 92px; }
+  .flower { font-size: 30px; }
+
+  .card { padding: clamp(20px, 4vh, 34px) clamp(28px, 6vw, 60px); }
+  .name { font-size: clamp(24px, 6vh, 40px); }
+  .amp { font-size: clamp(14px, 3vh, 22px); margin: 2px 0; }
+  .date { font-size: clamp(18px, 5vh, 30px); }
+  .divl { margin: 12px auto; }
+  .cal-btn { margin-top: 16px; }
+}
+
+/* Accessibility: honour reduced-motion by stilling the ambient CSS loops.
+   (The canvas zoom is skipped in JS via matchMedia.) */
+@media (prefers-reduced-motion: reduce) {
+  .pt { animation: none; opacity: 0; }
+  .ring::after, .flower { animation: none; }
+  #enterScreen, #revealScreen.show, .r { transition: none; }
+}
