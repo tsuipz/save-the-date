@@ -22,10 +22,10 @@ import { sRng } from '../utils/rng';
 // --- Scene constants -------------------------------------------------------
 
 // The prototype advanced the zoom by 1/230 per frame at 60fps, so it completed
-// in 230 frames ≈ 3.83s. We drive it by wall-clock instead (see the loop) so
+// in 150 frames ≈ 2.5s. We drive it by wall-clock instead (see the loop) so
 // the duration is identical on a 60fps machine but no longer drifts when the
-// frame rate dips — keeping it in lockstep with App's 3900ms reveal timer.
-const ZOOM_MS = (230 / 60) * 1000; // ≈ 3833ms
+// frame rate dips — keeping it in lockstep with App's 2600ms reveal timer.
+const ZOOM_MS = (150 / 60) * 1000; // ≈ 2500ms
 
 // Vanishing point X as a fraction of width (always centred). The Y fraction is
 // dynamic (see `vpYFrac`) because mobile lowers it slightly.
@@ -98,7 +98,12 @@ export function useWisteriaTunnel() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const context = canvas.getContext('2d');
+    // `alpha: false` makes the backing store opaque, so the browser can skip
+    // compositing the canvas against whatever is behind it on every repaint.
+    // The scene already paints an opaque background over every pixel, so this
+    // is purely a win — most pronounced on Safari, whose canvas compositing is
+    // costlier than Chrome's.
+    const context = canvas.getContext('2d', { alpha: false });
     if (!context) return;
     // Typed non-null alias so the narrowing survives into the draw closures.
     const ctx: CanvasRenderingContext2D = context;
@@ -119,21 +124,41 @@ export function useWisteriaTunnel() {
     // position — so we build each once at the origin and reuse it via translate.
     // Cleared on every rebuild so it can't grow unbounded across resizes.
     const haloCache = new Map<string, CanvasGradient>();
-    // The canopy top-band and the two side vignettes depend only on W/H, so
-    // they're rebuilt once per resize (buildEdgeGradients) rather than per frame.
+    // The canopy top-band and the two side vignettes depend only on W/H. They're
+    // all static edge-darkening drawn on top of the scene, so we bake the three
+    // of them into a single overlay (`edgesCache`) once per resize and blit it
+    // in one drawImage per frame — replacing three full-screen gradient fills.
+    // The individual gradients are kept as a fallback for when the offscreen
+    // context can't be created.
     let topBandGradient: CanvasGradient | null = null;
     let vignetteLeft: CanvasGradient | null = null;
     let vignetteRight: CanvasGradient | null = null;
+    let edgesCache: HTMLCanvasElement | null = null;
 
     // Per-build responsive config (re-derived on every resize).
     let vpYFrac = 0.38;
     let minFloret = 1;
+    // Florets per row = round(1 + env * floretSpread). Trimmed on mobile and on
+    // Safari (set in buildScene) to cut the dominant per-frame fill count; full
+    // value on desktop Chrome/Firefox keeps that path pixel-identical.
+    let floretSpread = 3.5;
     // True on phone-sized viewports. Phones are CPU-bound on the per-frame
     // floret draw (thousands of tiny fills), so the draw closures and the
     // loop's frame cap read this to do less work on mobile — fewer florets,
     // glow only on the nearest strands, no per-floret highlight, 30fps cap.
     // Desktop has the headroom and is left at full fidelity.
     let mobile = false;
+    // Safari (desktop + iOS) renders the per-frame floret fills — especially the
+    // radial-gradient glow halo — far more slowly than Chrome, so the fly-through
+    // can't hold frame rate at full fidelity. We detect it by UA (the "Safari"
+    // token, minus every engine that also carries it: Chrome/Edge on desktop and
+    // the CriOS/FxiOS wrappers on iOS) and trim the costliest, least-noticeable
+    // touches — fewer florets per row, a tighter halo, no per-floret highlight.
+    // Every other browser is left pixel-identical.
+    const isSafari =
+      typeof navigator !== 'undefined' &&
+      /safari/i.test(navigator.userAgent) &&
+      !/chrome|chromium|crios|fxios|edg|android/i.test(navigator.userAgent);
 
     const vpY = () => H * vpYFrac;
     const vpX = () => W * VP_X_FRAC;
@@ -150,10 +175,15 @@ export function useWisteriaTunnel() {
       // the device re-tunes the scene on the resize event.
       const isMobile = W < 768;
       mobile = isMobile;
-      const nColsBase = isMobile ? 9 : 22;
-      const canopyCount = isMobile ? 150 : 280;
+      // Scene density was dialled down across the board (fewer strand columns
+      // and fewer florets per strand) to hold frame rate on every browser — the
+      // per-frame cost is dominated by the strand/floret fill count. Mobile and
+      // Safari thin each strand a little further on top of that.
+      const nColsBase = isMobile ? 7 : 14;
+      const canopyCount = isMobile ? 120 : 220;
       vpYFrac = isMobile ? 0.42 : 0.38;
       minFloret = isMobile ? 1.7 : 1;
+      floretSpread = isMobile ? 1.8 : isSafari ? 2.0 : 2.6;
 
       const vx = vpX();
       const vy = vpY();
@@ -265,6 +295,37 @@ export function useWisteriaTunnel() {
       vignetteRight = ctx.createLinearGradient(W, 0, W * (1 - 0.12), 0);
       vignetteRight.addColorStop(0, 'rgba(10,4,22,0.88)');
       vignetteRight.addColorStop(1, 'rgba(10,4,22,0)');
+
+      // Bake the three edge gradients into one transparent overlay, in the same
+      // order and at the same coords the per-frame fills used (top band, then
+      // left, then right), so a single blit reproduces them exactly. If the
+      // offscreen context is unavailable, draw() falls back to the three fills.
+      const off = document.createElement('canvas');
+      off.width = W;
+      off.height = H;
+      const octx = off.getContext('2d');
+      if (!octx) {
+        edgesCache = null;
+        return;
+      }
+      // Gradients are bound to the context that created them, so rebuild them on
+      // the offscreen context (identical coords/stops to the three above).
+      const tb = octx.createLinearGradient(0, 0, 0, H * 0.08);
+      tb.addColorStop(0, 'rgba(14,6,28,0.95)');
+      tb.addColorStop(1, 'rgba(14,6,28,0)');
+      octx.fillStyle = tb;
+      octx.fillRect(0, 0, W, H * 0.08);
+      const vl = octx.createLinearGradient(0, 0, W * 0.12, 0);
+      vl.addColorStop(0, 'rgba(10,4,22,0.88)');
+      vl.addColorStop(1, 'rgba(10,4,22,0)');
+      octx.fillStyle = vl;
+      octx.fillRect(0, 0, W, H);
+      const vr = octx.createLinearGradient(W, 0, W * (1 - 0.12), 0);
+      vr.addColorStop(0, 'rgba(10,4,22,0.88)');
+      vr.addColorStop(1, 'rgba(10,4,22,0)');
+      octx.fillStyle = vr;
+      octx.fillRect(0, 0, W, H);
+      edgesCache = off;
     }
 
     // Bake the static canopy once per resize — these 150-280 radial
@@ -341,7 +402,7 @@ export function useWisteriaTunnel() {
       c.fill();
 
       const rp = sRng(888);
-      for (let i = 0; i < 140; i++) {
+      for (let i = 0; i < 100; i++) {
         const px = vx + (rp() - 0.5) * nearW * (0.2 + rp() * 0.8);
         const py = vy + H * 0.06 + rp() * (H - vy - H * 0.06) * 0.95;
         const ps = (py - vy) / Math.max(1, H - vy);
@@ -406,8 +467,8 @@ export function useWisteriaTunnel() {
       ctx.translate(-W / 2, 0);
       if (canopyCache) ctx.drawImage(canopyCache, 0, 0);
       ctx.restore();
-      if (topBandGradient) ctx.fillStyle = topBandGradient;
-      ctx.fillRect(0, 0, W, H * 0.08);
+      // The dark top band that anchors the canopy is now baked into edgesCache
+      // and blitted in draw() (see the edge overlay), so it's not drawn here.
     }
 
     // Cached soft-glow halo gradient for a near floret. Built once at the
@@ -460,6 +521,15 @@ export function useWisteriaTunnel() {
         sx += push;
       }
       const ax = sx + sway; // anchored X for this frame
+      // Cull strands the zoom has pushed entirely off-canvas — in the back half
+      // of the fly-through a large share of strands have flown past the edges
+      // and every floret fill on them is wasted. `reach` over-estimates how far
+      // any floret centre strays from `ax` (rowHW peaks at hw*0.98, x jitter
+      // adds hw*0.35, plus sway) so we never drop a floret that's still partly
+      // visible — keeping the output pixel-identical. At rest (no push) strands
+      // sit inside the tunnel and this never triggers.
+      const reach = st.w * 1.5 + Math.abs(sway);
+      if (ax + reach < 0 || ax - reach > W) return;
       const ay = st.topY;
       const len = st.len;
       const hw = st.w;
@@ -479,7 +549,7 @@ export function useWisteriaTunnel() {
         const env = Math.sin(prog * Math.PI) * 0.8 + 0.18;
         const rowY = ay + len * (0.02 + prog * 0.98);
         const rowHW = hw * env; // row is wider where the strand is fuller
-        const nFlorets = Math.max(1, Math.round(1 + env * (mobile ? 2.2 : 3.5))); // more florets mid-strand
+        const nFlorets = Math.max(1, Math.round(1 + env * floretSpread)); // more florets mid-strand
         const a = depthAlpha * (0.55 + env * 0.38 * (1 - prog * 0.3));
 
         // Spread florets across the row width, with deterministic jitter so
@@ -499,8 +569,10 @@ export function useWisteriaTunnel() {
 
           // 1) Soft glow halo — only for near strands, since the extra radial
           //    gradient is costly and invisible far away. Mobile limits it to
-          //    the very nearest strands (depth < 0.3) to save fill cost.
-          if (st.depth < (mobile ? 0.3 : 0.6)) {
+          //    the very nearest strands (depth < 0.3) to save fill cost; Safari
+          //    matches that (radial-gradient fills are its slowest primitive),
+          //    keeping the glow only on the foreground strands.
+          if (st.depth < (mobile || isSafari ? 0.3 : 0.6)) {
             ctx.save();
             ctx.translate(px, py);
             ctx.beginPath();
@@ -510,22 +582,25 @@ export function useWisteriaTunnel() {
             ctx.fill();
             ctx.restore();
           }
-          // 2) The floret body — a tall ellipse (scale 0.74×1.28) tilted a
-          //    little, giving each bloom a petal-like shape.
-          ctx.save();
-          ctx.translate(px, py);
-          ctx.rotate(Math.sin(row * 2 + f * 1.5) * 0.18);
-          ctx.scale(0.74, 1.28);
+          // 2) The floret body — a tall ellipse (0.74×1.28) tilted a little,
+          //    giving each bloom a petal-like shape. Drawn directly with
+          //    ctx.ellipse (centre, semi-axes, rotation) instead of a
+          //    save/translate/rotate/scale/arc/restore stack: the result is
+          //    pixel-identical (a rotated scaled circle *is* a rotated ellipse)
+          //    but skips the per-floret context save/restore, which is the
+          //    dominant per-frame cost on Safari.
+          const rot = Math.sin(row * 2 + f * 1.5) * 0.18;
           ctx.beginPath();
-          ctx.arc(0, 0, r, 0, Math.PI * 2);
+          ctx.ellipse(px, py, r * 0.74, r * 1.28, rot, 0, Math.PI * 2);
           ctx.fillStyle = `hsl(${dHue}, ${sat + 5}%, ${dLit + 3}%)`;
           ctx.globalAlpha = a * 0.88;
           ctx.fill();
-          ctx.restore();
 
           // 3) Tiny offset highlight for a hint of dimensionality (skipped on
-          //    mobile — it's a third per-floret fill the phone CPU can't spare).
-          if (!mobile) {
+          //    mobile — it's a third per-floret fill the phone CPU can't spare,
+          //    and on Safari for the same reason: this fires for every floret,
+          //    so dropping it is the most fill-proportional saving available).
+          if (!mobile && !isSafari) {
             ctx.beginPath();
             ctx.arc(px - r * 0.18, py - r * 0.2, r * 0.32, 0, Math.PI * 2);
             ctx.fillStyle = `hsla(${dHue - 12},88%,${dLit + 26}%,0.28)`;
@@ -561,7 +636,9 @@ export function useWisteriaTunnel() {
     // the offscreen context couldn't be created.
     function draw() {
       const zoom = easeOutQuart(camZ);
-      ctx.clearRect(0, 0, W, H);
+      // No clearRect: the base layer below repaints every pixel opaquely (the
+      // full-screen baseCache blit, or drawBackground's fillRect fallback), so
+      // clearing first is wasted work and would only add a full-screen pass.
       if (baseCache) {
         ctx.drawImage(baseCache, 0, 0);
       } else {
@@ -571,15 +648,23 @@ export function useWisteriaTunnel() {
       }
       STRANDS.forEach((st) => drawStrand(st, zoom));
       drawCanopy(zoom);
-      // Left edge fades in from x=0; right edge from x=W, each covering the
-      // outer 12% of the width (gradients prebuilt in buildEdgeGradients).
-      if (vignetteLeft) {
-        ctx.fillStyle = vignetteLeft;
-        ctx.fillRect(0, 0, W, H);
-      }
-      if (vignetteRight) {
-        ctx.fillStyle = vignetteRight;
-        ctx.fillRect(0, 0, W, H);
+      // Edge darkening (top band + left/right vignettes) in one blit. Falls back
+      // to the three separate gradient fills if the overlay couldn't be baked.
+      if (edgesCache) {
+        ctx.drawImage(edgesCache, 0, 0);
+      } else {
+        if (topBandGradient) {
+          ctx.fillStyle = topBandGradient;
+          ctx.fillRect(0, 0, W, H * 0.08);
+        }
+        if (vignetteLeft) {
+          ctx.fillStyle = vignetteLeft;
+          ctx.fillRect(0, 0, W, H);
+        }
+        if (vignetteRight) {
+          ctx.fillStyle = vignetteRight;
+          ctx.fillRect(0, 0, W, H);
+        }
       }
     }
 

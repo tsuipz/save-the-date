@@ -39,7 +39,7 @@ test.describe('full animation flow', () => {
     // EnterScreen gets .hide immediately on click (opacity 0, pointer-events none).
     await expect(page.locator('#enterScreen')).toHaveClass(/hide/);
 
-    // .show is added to #revealScreen at 3900ms — wait up to 8s.
+    // .show is added to #revealScreen at 2600ms — wait up to 6s.
     // Use class presence, not toBeVisible(): both divs always have layout
     // dimensions so opacity-0 elements pass Playwright's visibility check.
     await page.locator('#revealScreen.show').waitFor({ state: 'attached' });
