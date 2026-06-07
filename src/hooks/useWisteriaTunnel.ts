@@ -114,6 +114,16 @@ export function useWisteriaTunnel() {
     let POSTS: Post[] = [];
     let canopyCache: HTMLCanvasElement | null = null;
     let baseCache: HTMLCanvasElement | null = null;
+    // Per-floret halo gradients are identical frame-to-frame — their colour and
+    // radius depend only on the strand/row/floret indices, not on the swaying
+    // position — so we build each once at the origin and reuse it via translate.
+    // Cleared on every rebuild so it can't grow unbounded across resizes.
+    const haloCache = new Map<string, CanvasGradient>();
+    // The canopy top-band and the two side vignettes depend only on W/H, so
+    // they're rebuilt once per resize (buildEdgeGradients) rather than per frame.
+    let topBandGradient: CanvasGradient | null = null;
+    let vignetteLeft: CanvasGradient | null = null;
+    let vignetteRight: CanvasGradient | null = null;
 
     // Per-build responsive config (re-derived on every resize).
     let vpYFrac = 0.38;
@@ -126,6 +136,7 @@ export function useWisteriaTunnel() {
       STRANDS = [];
       CANOPY_BLOBS = [];
       POSTS = [];
+      haloCache.clear();
 
       // Mobile improvement: smaller screens get fewer columns/blobs, a lower
       // vanishing point, and chunkier florets so the scene stays legible and
@@ -225,6 +236,25 @@ export function useWisteriaTunnel() {
       // moving parts (strands) plus the scaled canopy blit.
       buildBaseCache();
       buildCanopyCache();
+      buildEdgeGradients();
+    }
+
+    // The canopy top-band and the two side vignettes depend only on W/H, so we
+    // build them once per resize instead of recreating them every frame. Built
+    // at the same absolute coords the per-frame versions used, so they render
+    // identically.
+    function buildEdgeGradients() {
+      topBandGradient = ctx.createLinearGradient(0, 0, 0, H * 0.08);
+      topBandGradient.addColorStop(0, 'rgba(14,6,28,0.95)');
+      topBandGradient.addColorStop(1, 'rgba(14,6,28,0)');
+
+      vignetteLeft = ctx.createLinearGradient(0, 0, W * 0.12, 0);
+      vignetteLeft.addColorStop(0, 'rgba(10,4,22,0.88)');
+      vignetteLeft.addColorStop(1, 'rgba(10,4,22,0)');
+
+      vignetteRight = ctx.createLinearGradient(W, 0, W * (1 - 0.12), 0);
+      vignetteRight.addColorStop(0, 'rgba(10,4,22,0.88)');
+      vignetteRight.addColorStop(1, 'rgba(10,4,22,0)');
     }
 
     // Bake the static canopy once per resize — these 150-280 radial
@@ -366,11 +396,32 @@ export function useWisteriaTunnel() {
       ctx.translate(-W / 2, 0);
       if (canopyCache) ctx.drawImage(canopyCache, 0, 0);
       ctx.restore();
-      const topBand = ctx.createLinearGradient(0, 0, 0, H * 0.08);
-      topBand.addColorStop(0, 'rgba(14,6,28,0.95)');
-      topBand.addColorStop(1, 'rgba(14,6,28,0)');
-      ctx.fillStyle = topBand;
+      if (topBandGradient) ctx.fillStyle = topBandGradient;
       ctx.fillRect(0, 0, W, H * 0.08);
+    }
+
+    // Cached soft-glow halo gradient for a near floret. Built once at the
+    // origin (0,0) and positioned per-floret with a translate at draw time — a
+    // translated origin-anchored radial gradient renders identically to one
+    // created at the floret's absolute (px,py), so this is pixel-for-pixel the
+    // same as the prototype, just without rebuilding the gradient every frame.
+    // The key is the exact colour/radius, which is constant per floret across
+    // frames, so each entry is created once on its first frame and then reused.
+    function haloGradient(
+      dHue: number,
+      sat: number,
+      dLit: number,
+      r: number,
+    ): CanvasGradient {
+      const key = `${dHue}|${sat}|${dLit}|${r}`;
+      let g = haloCache.get(key);
+      if (!g) {
+        g = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 2.6);
+        g.addColorStop(0, `hsla(${dHue},${sat + 8}%,${dLit + 14}%, 0.25)`);
+        g.addColorStop(1, `hsla(${dHue},${sat}%,${dLit}%, 0)`);
+        haloCache.set(key, g);
+      }
+      return g;
     }
 
     /**
@@ -439,14 +490,14 @@ export function useWisteriaTunnel() {
           // 1) Soft glow halo — only for near strands (depth < 0.6), since the
           //    extra radial gradient is costly and invisible far away.
           if (st.depth < 0.6) {
-            const gl = ctx.createRadialGradient(px, py, 0, px, py, r * 2.6);
-            gl.addColorStop(0, `hsla(${dHue},${sat + 8}%,${dLit + 14}%, 0.25)`);
-            gl.addColorStop(1, `hsla(${dHue},${sat}%,${dLit}%, 0)`);
+            ctx.save();
+            ctx.translate(px, py);
             ctx.beginPath();
-            ctx.arc(px, py, r * 2.6, 0, Math.PI * 2);
-            ctx.fillStyle = gl;
+            ctx.arc(0, 0, r * 2.6, 0, Math.PI * 2);
+            ctx.fillStyle = haloGradient(dHue, sat, dLit, r);
             ctx.globalAlpha = a * 0.45;
             ctx.fill();
+            ctx.restore();
           }
           // 2) The floret body — a tall ellipse (scale 0.74×1.28) tilted a
           //    little, giving each bloom a petal-like shape.
@@ -472,31 +523,23 @@ export function useWisteriaTunnel() {
       ctx.globalAlpha = 1; // reset for the next strand
     }
 
-    // Frame-rate policy. `frameInterval()` returns the minimum ms between
-    // drawn frames (0 = uncapped, draw every rAF):
-    //  - low-core devices are always capped to ~30fps;
-    //  - once the fly-through has finished (camZ >= 1) — or immediately, for
-    //    reduced-motion users who never zoom — the scene is just gentle ambient
-    //    sway behind a blur(38px) card, so we also drop to ~30fps to save
-    //    battery during the (indefinite) time the reveal card sits on screen;
-    //  - during the active zoom we stay uncapped for a smooth fly-through.
-    const IDLE_INTERVAL = 1000 / 30;
+    // Frame-rate policy. The loop runs uncapped during the active fly-through
+    // for a smooth zoom, except on low-core devices (≤4 logical cores) which
+    // are capped to ~30fps to stay responsive. Once the fly-through finishes
+    // the loop stops entirely (see `loop` → `frozen`), so there's no idle or
+    // post-reveal throttle to manage here.
+    const CAP_30FPS_MS = 1000 / 30;
     const lowCoreInterval =
       typeof navigator !== 'undefined' &&
       typeof navigator.hardwareConcurrency === 'number' &&
       navigator.hardwareConcurrency <= 4
-        ? IDLE_INTERVAL
+        ? CAP_30FPS_MS
         : 0;
     const reducedMotion =
       typeof window !== 'undefined' &&
       typeof window.matchMedia === 'function' &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let lastFrame = 0;
-
-    function frameInterval(): number {
-      const idle = reducedMotion || (zoomActiveRef.current && camZ >= 1);
-      return Math.max(lowCoreInterval, idle ? IDLE_INTERVAL : 0);
-    }
 
     // Composite one frame: cached base → moving strands → scaled canopy →
     // side vignettes (drawn last, on top, to darken the left/right edges and
@@ -514,33 +557,29 @@ export function useWisteriaTunnel() {
       }
       STRANDS.forEach((st) => drawStrand(st, zoom));
       drawCanopy(zoom);
-      // Left edge fades in from x=0; right edge fades in from x=W. Each covers
-      // the outer 12% of the width.
-      [
-        [0, 0.12],
-        [1, 0.12],
-      ].forEach(([s, f]) => {
-        const sv = ctx.createLinearGradient(
-          s === 0 ? 0 : W,
-          0,
-          s === 0 ? W * f : W * (1 - f),
-          0,
-        );
-        sv.addColorStop(0, 'rgba(10,4,22,0.88)');
-        sv.addColorStop(1, 'rgba(10,4,22,0)');
-        ctx.fillStyle = sv;
+      // Left edge fades in from x=0; right edge from x=W, each covering the
+      // outer 12% of the width (gradients prebuilt in buildEdgeGradients).
+      if (vignetteLeft) {
+        ctx.fillStyle = vignetteLeft;
         ctx.fillRect(0, 0, W, H);
-      });
+      }
+      if (vignetteRight) {
+        ctx.fillStyle = vignetteRight;
+        ctx.fillRect(0, 0, W, H);
+      }
     }
 
-    // The animation loop. Always re-schedules itself; it bails early (without
-    // drawing) until the current frameInterval() has elapsed.
+    // The animation loop. Re-schedules itself each frame until the fly-through
+    // completes, then freezes (stops rescheduling) — the last painted frame
+    // stays on the canvas as a static backdrop. On low-core devices it bails
+    // early (without drawing) until the 30fps cap has elapsed.
     let rafId = 0;
     let paused = false;
+    let frozen = false;
     function loop(ts: number) {
+      if (frozen) return;
       rafId = requestAnimationFrame(loop);
-      const interval = frameInterval();
-      if (interval && ts - lastFrame < interval) return;
+      if (lowCoreInterval && ts - lastFrame < lowCoreInterval) return;
       lastFrame = ts;
 
       tick++; // drives the sway sine wave
@@ -551,6 +590,16 @@ export function useWisteriaTunnel() {
         camZ = Math.min(1, (ts - zoomStart) / ZOOM_MS);
       }
       draw();
+
+      // Freeze once the fly-through has arrived (camZ === 1) — or immediately
+      // for reduced-motion users, who never zoom. The tunnel is then a static
+      // image behind the blur(38px) reveal card, so redrawing it is wasted
+      // work; stopping the loop also frees Safari/mobile from re-running the
+      // expensive 38px backdrop blur on every canvas repaint.
+      if (reducedMotion || (zoomActiveRef.current && camZ >= 1)) {
+        frozen = true;
+        cancelAnimationFrame(rafId);
+      }
     }
 
     // Match the canvas pixel buffer to the viewport and rebuild the (size-
@@ -559,6 +608,9 @@ export function useWisteriaTunnel() {
       W = canvas!.width = window.innerWidth;
       H = canvas!.height = window.innerHeight;
       buildScene();
+      // Setting canvas.width cleared the buffer. If we've already frozen, the
+      // loop won't repaint, so redraw the static frame once at the new size.
+      if (frozen) draw();
     }
 
     // Pause the loop entirely while the tab is backgrounded — there's no point
@@ -569,7 +621,7 @@ export function useWisteriaTunnel() {
       if (document.hidden) {
         paused = true;
         cancelAnimationFrame(rafId);
-      } else if (paused) {
+      } else if (paused && !frozen) {
         paused = false;
         lastFrame = 0;
         rafId = requestAnimationFrame(loop);
