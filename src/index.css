@@ -83,8 +83,7 @@ body { width: 100%; height: 100vh; overflow: hidden; background: #12082a; }
   padding: clamp(40px, 5.5vw, 66px) clamp(48px, 7vw, 90px) clamp(38px, 5vw, 60px);
   border-radius: 8px;
 }
-.cbg { position: absolute; inset: 0; border-radius: 8px; border: 1px solid rgba(215, 178, 252, .16); background: rgba(10, 5, 24, .56); backdrop-filter: blur(0px); -webkit-backdrop-filter: blur(0px); transition: backdrop-filter 2.5s ease, -webkit-backdrop-filter 2.5s ease; }
-#revealScreen.show .cbg { backdrop-filter: blur(38px); -webkit-backdrop-filter: blur(38px); }
+.cbg { position: absolute; inset: 0; border-radius: 8px; border: 1px solid rgba(215, 178, 252, .16); background: rgba(10, 5, 24, .56); backdrop-filter: blur(0px); -webkit-backdrop-filter: blur(0px); }
 .cdeco { position: absolute; left: 50%; transform: translateX(-50%); font-size: 18px; letter-spacing: 10px; color: rgba(205, 165, 248, .22); z-index: 1; }
 .cdeco.t { top: -11px; } .cdeco.b { bottom: -11px; }
 .r { position: relative; z-index: 1; opacity: 0; transform: translateY(12px); transition: opacity .9s ease, transform .9s ease; }
@@ -164,5 +163,5 @@ body { width: 100%; height: 100vh; overflow: hidden; background: #12082a; }
 @media (prefers-reduced-motion: reduce) {
   .pt { animation: none; opacity: 0; }
   .ring::after, .flower { animation: none; }
-  #enterScreen, #revealScreen.show, .r, .cbg { transition: none; }
+  #enterScreen, #revealScreen.show, .r { transition: none; }
 }

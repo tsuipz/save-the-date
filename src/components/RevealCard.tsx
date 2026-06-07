@@ -1,8 +1,6 @@
+import { useEffect, useRef } from 'react';
+
 interface Props {
-  /**
-   * When true, adds the `.show` class. The CSS then fades the card in and
-   * runs the staggered per-line reveal via the `.d1`…`.d7` transition delays.
-   */
   show: boolean;
 }
 
@@ -10,15 +8,52 @@ interface Props {
 // Opened in a new tab with rel="noopener" so the form can't access window.opener.
 const FORM_URL = 'https://forms.gle/onSKUD2gxz59Ybmw5';
 
+const MAX_BLUR = 38;
+const BLUR_DURATION = 3000;
+
 /**
  * Screen 2 — the reveal card. Lines fade in staggered (.r.dN) once `show`
  * is set. The final line (.d7) is an RSVP button linking to the Google Form.
+ *
+ * The .cbg frosted-glass blur is driven frame-by-frame via rAF rather than a
+ * CSS transition because backdrop-filter transitions are unreliable on iOS
+ * Safari and snap to the final value immediately.
  */
 export default function RevealCard({ show }: Props) {
+  const cbgRef = useRef<HTMLDivElement>(null);
+  const rafRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!show) return;
+    const cbg = cbgRef.current;
+    if (!cbg) return;
+
+    const setBlur = (px: number) => {
+      cbg.style.backdropFilter = `blur(${px}px)`;
+      cbg.style.setProperty('-webkit-backdrop-filter', `blur(${px}px)`);
+    };
+
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setBlur(MAX_BLUR);
+      return;
+    }
+
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min((now - start) / BLUR_DURATION, 1);
+      const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+      setBlur(eased * MAX_BLUR);
+      if (t < 1) rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [show]);
+
   return (
     <div id="revealScreen" className={show ? 'show' : undefined}>
       <div className="card">
-        <div className="cbg" />
+        <div className="cbg" ref={cbgRef} />
         <span className="cdeco t" aria-hidden="true">
           ✦ ✦ ✦
         </span>
