@@ -7,10 +7,10 @@ import { useWisteriaTunnel } from './hooks/useWisteriaTunnel';
 
 // Timing ported from the prototype's enterForest():
 //   150ms  → start the canvas zoom
-//   3900ms → fade in the reveal card
+//   2600ms → fade in the reveal card
 //   +2000ms after that → unmount the (already faded) enter screen
 const ZOOM_DELAY = 150;
-const REVEAL_DELAY = 3900;
+const REVEAL_DELAY = 2600;
 const ENTER_UNMOUNT_DELAY = REVEAL_DELAY + 2000;
 
 const prefersReducedMotion = () =>
