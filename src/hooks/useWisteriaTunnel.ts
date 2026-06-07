@@ -128,6 +128,12 @@ export function useWisteriaTunnel() {
     // Per-build responsive config (re-derived on every resize).
     let vpYFrac = 0.38;
     let minFloret = 1;
+    // True on phone-sized viewports. Phones are CPU-bound on the per-frame
+    // floret draw (thousands of tiny fills), so the draw closures and the
+    // loop's frame cap read this to do less work on mobile — fewer florets,
+    // glow only on the nearest strands, no per-floret highlight, 30fps cap.
+    // Desktop has the headroom and is left at full fidelity.
+    let mobile = false;
 
     const vpY = () => H * vpYFrac;
     const vpX = () => W * VP_X_FRAC;
@@ -143,10 +149,11 @@ export function useWisteriaTunnel() {
       // cheap to draw on phones. These are read fresh each build, so rotating
       // the device re-tunes the scene on the resize event.
       const isMobile = W < 768;
-      const nColsBase = isMobile ? 12 : 22;
+      mobile = isMobile;
+      const nColsBase = isMobile ? 9 : 22;
       const canopyCount = isMobile ? 150 : 280;
       vpYFrac = isMobile ? 0.42 : 0.38;
-      minFloret = isMobile ? 1.6 : 1;
+      minFloret = isMobile ? 1.7 : 1;
 
       const vx = vpX();
       const vy = vpY();
@@ -180,7 +187,10 @@ export function useWisteriaTunnel() {
           const lit = 44 + d * 14 + r() * 10; // far layers a touch lighter (haze)
           const strandLen = baseLen * (0.65 + r() * 0.7); // vary length per strand
           // One floret row per ~2.2 strand-widths of length.
-          const nDrops = Math.max(5, Math.floor(strandLen / (strandW * 2.2)));
+          const nDrops = Math.max(
+            isMobile ? 4 : 5,
+            Math.floor(strandLen / (strandW * (isMobile ? 2.9 : 2.2))),
+          );
           STRANDS.push({
             worldX,
             depth: d,
@@ -469,7 +479,7 @@ export function useWisteriaTunnel() {
         const env = Math.sin(prog * Math.PI) * 0.8 + 0.18;
         const rowY = ay + len * (0.02 + prog * 0.98);
         const rowHW = hw * env; // row is wider where the strand is fuller
-        const nFlorets = Math.max(1, Math.round(1 + env * 3.5)); // more florets mid-strand
+        const nFlorets = Math.max(1, Math.round(1 + env * (mobile ? 2.2 : 3.5))); // more florets mid-strand
         const a = depthAlpha * (0.55 + env * 0.38 * (1 - prog * 0.3));
 
         // Spread florets across the row width, with deterministic jitter so
@@ -487,9 +497,10 @@ export function useWisteriaTunnel() {
           const dLit = lit + Math.cos(row * 1.6 + f * 1.2) * 6; // lightness shimmer
           if (!isFinite(px) || !isFinite(py) || !isFinite(r)) continue;
 
-          // 1) Soft glow halo — only for near strands (depth < 0.6), since the
-          //    extra radial gradient is costly and invisible far away.
-          if (st.depth < 0.6) {
+          // 1) Soft glow halo — only for near strands, since the extra radial
+          //    gradient is costly and invisible far away. Mobile limits it to
+          //    the very nearest strands (depth < 0.3) to save fill cost.
+          if (st.depth < (mobile ? 0.3 : 0.6)) {
             ctx.save();
             ctx.translate(px, py);
             ctx.beginPath();
@@ -512,12 +523,15 @@ export function useWisteriaTunnel() {
           ctx.fill();
           ctx.restore();
 
-          // 3) Tiny offset highlight for a hint of dimensionality.
-          ctx.beginPath();
-          ctx.arc(px - r * 0.18, py - r * 0.2, r * 0.32, 0, Math.PI * 2);
-          ctx.fillStyle = `hsla(${dHue - 12},88%,${dLit + 26}%,0.28)`;
-          ctx.globalAlpha = a * 0.38;
-          ctx.fill();
+          // 3) Tiny offset highlight for a hint of dimensionality (skipped on
+          //    mobile — it's a third per-floret fill the phone CPU can't spare).
+          if (!mobile) {
+            ctx.beginPath();
+            ctx.arc(px - r * 0.18, py - r * 0.2, r * 0.32, 0, Math.PI * 2);
+            ctx.fillStyle = `hsla(${dHue - 12},88%,${dLit + 26}%,0.28)`;
+            ctx.globalAlpha = a * 0.38;
+            ctx.fill();
+          }
         }
       }
       ctx.globalAlpha = 1; // reset for the next strand
@@ -579,6 +593,10 @@ export function useWisteriaTunnel() {
     function loop(ts: number) {
       if (frozen) return;
       rafId = requestAnimationFrame(loop);
+      // Low-core devices are capped to ~30fps; everything else runs at the
+      // display's natural rate. Phones aren't capped — the mobile scene is
+      // tuned down in buildScene/drawStrand to be cheap enough to render at
+      // whatever rate the device sustains, and a fixed cap only added jitter.
       if (lowCoreInterval && ts - lastFrame < lowCoreInterval) return;
       lastFrame = ts;
 
