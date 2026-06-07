@@ -67,7 +67,13 @@ body { width: 100%; height: 100vh; overflow: hidden; background: #12082a; }
 
 #revealScreen {
   position: fixed; inset: 0; z-index: 9;
-  display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: safe center; justify-content: center;
+  /* On short/landscape screens the card can be taller than the viewport.
+     `safe center` keeps it centred when it fits but falls back to top-aligned
+     (instead of clipping the top) when it doesn't, and overflow-y lets it
+     scroll. Padding keeps it off the edges while scrolling. */
+  overflow-y: auto;
+  padding: 16px;
   opacity: 0; pointer-events: none;
 }
 #revealScreen.show { opacity: 1; pointer-events: auto; transition: opacity 2s ease; }
@@ -132,6 +138,24 @@ body { width: 100%; height: 100vh; overflow: hidden; background: #12082a; }
   .flower { font-size: 38px; }
   .card { padding: clamp(34px, 7vw, 48px) clamp(28px, 6vw, 44px) clamp(30px, 6vw, 42px); }
   .cdeco { font-size: 15px; letter-spacing: 7px; }
+}
+
+/* Short / landscape viewports (e.g. a phone on its side): scale the card down
+   with vh-based type and padding so it fits the limited height without needing
+   to scroll, and tighten the enter panel to match. */
+@media (max-height: 560px) {
+  #enterScreen .inner { padding: 20px 28px 24px; }
+  .eover { margin-bottom: 16px; }
+  #ebtn { gap: 12px; }
+  .ring { width: 92px; height: 92px; }
+  .flower { font-size: 30px; }
+
+  .card { padding: clamp(20px, 4vh, 34px) clamp(28px, 6vw, 60px); }
+  .name { font-size: clamp(24px, 6vh, 40px); }
+  .amp { font-size: clamp(14px, 3vh, 22px); margin: 2px 0; }
+  .date { font-size: clamp(18px, 5vh, 30px); }
+  .divl { margin: 12px auto; }
+  .cal-btn { margin-top: 16px; }
 }
 
 /* Accessibility: honour reduced-motion by stilling the ambient CSS loops.
