@@ -10,15 +10,38 @@
       content="Shelley Shen & Patrick Tsui are getting married — May 29, 2027. Please save the date."
     />
 
-    <!-- Open Graph / link previews. Set og:url and og:image to the full
-         https://<user>.github.io/save-the-date/ URL once Pages is live. -->
+    <!-- Open Graph / link previews. Absolute URLs are required by most
+         scrapers (iMessage, Facebook, Twitter). These point at the GitHub
+         Pages host (tsuipz/save-the-date) — update the host here, the favicon
+         link, and vite.config.ts `base` together if the repo/domain changes. -->
     <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://tsuipz.github.io/save-the-date/" />
     <meta property="og:title" content="Save the Date — Shelley &amp; Patrick" />
     <meta
       property="og:description"
       content="Shelley Shen & Patrick Tsui are getting married — May 29, 2027."
     />
-    <meta name="twitter:card" content="summary" />
+    <meta
+      property="og:image"
+      content="https://tsuipz.github.io/save-the-date/og.png"
+    />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Shelley Shen & Patrick Tsui — May 29, 2027"
+    />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Save the Date — Shelley &amp; Patrick" />
+    <meta
+      name="twitter:description"
+      content="Shelley Shen & Patrick Tsui are getting married — May 29, 2027."
+    />
+    <meta
+      name="twitter:image"
+      content="https://tsuipz.github.io/save-the-date/og.png"
+    />
 
     <!-- Wisteria fonts: Cormorant Garamond, Cinzel, EB Garamond -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
